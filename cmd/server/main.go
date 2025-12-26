@@ -26,6 +26,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("mysql connect failed: %v", err)
 		}
+		db.EnsureSchema(d.Gorm)
 		pingDB = d.SQL.Ping
 	} else {
 		log.Println("MYSQL_DSN empty: running without database")
