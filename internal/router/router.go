@@ -47,6 +47,8 @@ func New(d Deps) *gin.Engine {
 		v := validator.New()
 
 		userRepo := repositories.NewUserRepo(d.DB)
+		postRepo := repositories.NewPostRepo(d.DB)
+		tagRepo := repositories.NewTagRepo(d.DB)
 
 		jm := jwtutil.Manager{
 			Secret: []byte(d.JWTSecret),
@@ -58,12 +60,21 @@ func New(d Deps) *gin.Engine {
 			Users: userRepo,
 			JWT:   jm,
 		}
+		postSvc := &services.PostService{
+			Posts: postRepo,
+			Tags:  tagRepo,
+		}
 		authMW := middleware.NewAuthMiddleware(jm)
 
 		authHandler := handlers.AuthHandler{
 			Auth:  authSvc,
 			Users: userRepo,
 			V:     v,
+		}
+		postHandler := handlers.PostHandler{
+			Posts:    postSvc,
+			PostRepo: postRepo,
+			V:        v,
 		}
 
 		av1 := r.Group("/api/v1/auth")
@@ -73,6 +84,16 @@ func New(d Deps) *gin.Engine {
 			av1.GET("/me", authMW.AuthRequired(), authHandler.Me)
 		}
 
+		// 公共：列表 + 详情（如果带 admin token，可看 draft）
+		pv1 := r.Group("/api/v1/posts")
+		pv1.Use(middleware.NewOptionalAuth(jm))
+		{
+			pv1.GET("", postHandler.List)
+
+			// 允许带 token
+			pv1.GET("/:slug", postHandler.GetBySlug)
+		}
+
 		// 示例：管理员保护路由（后续发文章就用这个）
 		admin := r.Group("/api/v1/admin")
 		admin.Use(authMW.AuthRequired(), middleware.RequireAdmin())
@@ -80,6 +101,15 @@ func New(d Deps) *gin.Engine {
 			admin.GET("/ping", func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"message": "admin pong"})
 			})
+		}
+		// admin：创建/更新/删除 + 预览
+		adminPosts := r.Group("/api/v1/admin/posts")
+		adminPosts.Use(authMW.AuthRequired(), middleware.RequireAdmin())
+		{
+			adminPosts.POST("", postHandler.Create)
+			adminPosts.PUT("/:id", postHandler.Update)
+			adminPosts.DELETE("/:id", postHandler.Delete)
+			adminPosts.POST("/preview", postHandler.Preview)
 		}
 	}
 
