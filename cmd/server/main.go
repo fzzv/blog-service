@@ -8,6 +8,8 @@ import (
 	"blog-service/internal/config"
 	"blog-service/internal/db"
 	"blog-service/internal/router"
+
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -19,7 +21,10 @@ func main() {
 		}
 	}
 
-	var pingDB func() error
+	var (
+		gdb    *gorm.DB
+		pingDB func() error
+	)
 
 	if cfg.MySQLDSN != "" {
 		d, err := db.Open(cfg.MySQLDSN)
@@ -27,12 +32,17 @@ func main() {
 			log.Fatalf("mysql connect failed: %v", err)
 		}
 		db.EnsureSchema(d.Gorm)
+		gdb = d.Gorm
 		pingDB = d.SQL.Ping
 	} else {
 		log.Println("MYSQL_DSN empty: running without database")
 	}
 
-	r := router.New(pingDB)
+	r := router.New(router.Deps{
+		DB:        gdb,
+		PingDB:    pingDB,
+		JWTSecret: cfg.JWTSecret,
+	})
 
 	log.Printf("server listening on %s", cfg.Addr)
 	if err := r.Run(cfg.Addr); err != nil {
